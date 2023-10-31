@@ -14,9 +14,10 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -54,6 +55,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_time: [0; MAX_SYSCALL_NUM],
+            task_time: get_time_ms(),
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -135,6 +138,26 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn add_syscall_times(&self, idx: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_time[idx] += 1;
+    }
+
+    fn get_syscall_times(&self, arr: &mut [u32]) {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        for i in 0..MAX_SYSCALL_NUM{
+            arr[i] = inner.tasks[current].syscall_time[i];
+        }
+    }
+
+    // fn get_firtime(&self) -> usize{
+    //     let inner = self.inner.exclusive_access();
+    //     let current = inner.current_task;
+    //     return inner.tasks[current].task_time;
+    // }
 }
 
 /// Run the first task in task list.
@@ -169,3 +192,18 @@ pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
 }
+
+///add syscall_times
+pub fn add_syscall_times(idx: usize) {
+    TASK_MANAGER.add_syscall_times(idx);
+}
+
+/// get syscall times
+pub fn get_syscall_times(arr: &mut [u32]) {
+    TASK_MANAGER.get_syscall_times(arr);
+}
+
+// get first call time
+// pub fn get_firtime() -> usize{
+//     return TASK_MANAGER.get_firtime();
+// } 
